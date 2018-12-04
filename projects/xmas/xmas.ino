@@ -13,7 +13,7 @@
 //
 
 // How many leds are in the strip?
-#define NUM_LEDS 148
+#define NUM_LEDS 300
 
 // Data pin that led data will be written out over
 #define DATA_PIN 2
@@ -33,6 +33,7 @@ int r = random(0, 255);
 int g = random(0, 255);
 int b = random(0, 255);
 int pattern = 0;
+int input = -1;
 boolean highSpeed = false;
 int lastPattern = 0;
 boolean lastHighSpeed = false;
@@ -45,26 +46,36 @@ void setup()
 	Serial.begin(115200); //set baud rate
 	EEPROM.get(0, pattern);
 	Serial.println("EEPROM Pattern:");
-	Serial.println(pattern); //show the data
-	EEPROM.get(sizeof(int), highSpeed);
-	Serial.println("EEPROM HighSpeed:");
+	Serial.println(pattern);   //show the data
 	Serial.println(highSpeed); //show the data
 	lastHighSpeed = highSpeed;
 	lastPattern = pattern;
+	pinMode(4, INPUT);
 }
 
 boolean check_serial()
 {
-	while (Serial.available())
-	{ //while there is data available on the serial monitor
-		int value = char(Serial.read());
-		Serial.println(value);
-		pattern = value % (int)'a';
+	int value = digitalRead(4);
+	Serial.println(value);
+	Serial.println(input);
+	Serial.println('-----');
+	Serial.println("Pattern:");
+	Serial.println(pattern);
+
+	if (input > -1 && value != input)
+	{
+		input = value;
+		pattern = ((pattern + 1) % 26);
 		Serial.println("Command:");
 		Serial.println(pattern);
 		SPEED = 1l;
 		return true;
 	}
+	else
+	{
+		input = value;
+	}
+
 	return false;
 }
 
@@ -329,7 +340,7 @@ void chaseThree(long length, long time, long pause, CRGB one, CRGB two, CRGB thr
 
 void clear()
 {
-	for (int i = 0; i < 148; i++)
+	for (int i = 0; i < NUM_LEDS; i++)
 	{
 		leds[i] = BLACK;
 	}
@@ -499,6 +510,24 @@ void easter()
 	show();
 	delay(2000l);
 }
+
+void sparkle_decay(CRGB color)
+{
+	for (int i = 0; i < NUM_LEDS; i++)
+	{
+		leds[i] = BLACK;
+	}
+	while (!check_serial())
+	{
+		delay(20l);
+		leds[random(0, NUM_LEDS - 1)] = color;
+		for (int i = 0; i < NUM_LEDS; i++)
+		{
+			leds[i] = leds[i].fadeToBlackBy(10);
+		}
+		show();
+	}
+}
 void show_color(CRGB color)
 {
 	showFixed(color);
@@ -516,5 +545,130 @@ void show_color(CRGB color)
 // your leds.
 void loop()
 {
-	xmas();
+	Serial.println("Pattern:");
+	Serial.println(pattern);
+	Serial.println("High Speed:");
+	Serial.println(highSpeed);
+	if (highSpeed)
+	{
+		SPEED = 2000l;
+	}
+	else
+	{
+		SPEED = 40000l;
+	}
+	if (lastPattern != pattern)
+	{
+		clear();
+	}
+	switch (pattern)
+	{
+	case 0:
+		Serial.println("XMas");
+		xmas();
+		break;
+	case 1:
+		Serial.println("Red/White");
+		everyOther(CRGB(255, 0, 0), CRGB(255, 255, 255));
+		show();
+		if (check_serial())
+			return;
+		delay(2000l);
+
+		break;
+	case 2:
+		Serial.println("White/Blue");
+		everyOther(CRGB(0, 0, 255), CRGB(255, 255, 255));
+		show();
+		if (check_serial())
+			return;
+		delay(2000l);
+		break;
+	case 3:
+		Serial.println("Red/Green");
+		everyOther(CRGB(0, 255, 0), CRGB(255, 0, 0));
+		show();
+		if (check_serial())
+			return;
+		delay(2000l);
+		break;
+
+	case 4:
+		Serial.println("Pink");
+		show_color(PINK);
+		break;
+	case 5:
+		Serial.println("Red");
+		show_color(CRGB(255, 0, 0));
+		break;
+	case 6:
+		Serial.println("White");
+		show_color(CRGB(255, 255, 255));
+		break;
+	case 7:
+		Serial.println("Blue");
+		show_color(CRGB(0, 0, 255));
+		break;
+	case 8:
+		Serial.println("Green");
+		show_color(CRGB(0, 255, 0));
+		break;
+	case 9:
+		Serial.println("Light Blue");
+		show_color(LIGHT_BLUE);
+		break;
+	case 10:
+		Serial.println("Random Cycle");
+		randomColor(randomColors2, 5);
+		if (check_serial())
+			return;
+		show();
+		delay(2000l);
+		break;
+
+	case 11:
+		Serial.println("Yellow White");
+		show_color(CRGB(100, 60, 20));
+		break;
+	case 12:
+		Serial.println("White/Blue alternate");
+		everyOther(CRGB(0, 0, 255), CRGB(255, 255, 255));
+		show();
+		if (check_serial())
+			return;
+		delay(2000l);
+		everyOther(CRGB(255, 255, 255), CRGB(0, 0, 255));
+		show();
+		if (check_serial())
+			return;
+		delay(2000l);
+		break;
+	case 13:
+		Serial.println("Random");
+		randomColor(randomColors2, 5);
+		show();
+		while (!check_serial())
+		{
+			delay(1000l);
+		}
+		break;
+	case 14:
+		Serial.println("Blue white");
+		show_color(CRGB(120, 120, 255));
+		break;
+	case 15:
+		Serial.println("Sparkle Decay");
+		sparkle_decay(CRGB(255, 255, 255));
+		break;
+
+	default:
+		pattern = 0;
+	}
+	if (lastPattern != pattern)
+	{
+		Serial.println("Saving pattern");
+		EEPROM.put(0, pattern);
+	}
+	lastPattern = pattern;
+	lastHighSpeed = highSpeed;
 }

@@ -13,7 +13,7 @@
 //
 
 // How many leds are in the strip?
-#define NUM_LEDS 148
+#define NUM_LEDS 200
 
 // Data pin that led data will be written out over
 #define DATA_PIN 2
@@ -33,6 +33,7 @@ int r = random(0, 255);
 int g = random(0, 255);
 int b = random(0, 255);
 int pattern = 0;
+int input = 0;
 boolean highSpeed = false;
 int lastPattern = 0;
 boolean lastHighSpeed = false;
@@ -46,25 +47,30 @@ void setup()
 	EEPROM.get(0, pattern);
 	Serial.println("EEPROM Pattern:");
 	Serial.println(pattern); //show the data
-	EEPROM.get(sizeof(int), highSpeed);
-	Serial.println("EEPROM HighSpeed:");
 	Serial.println(highSpeed); //show the data
 	lastHighSpeed = highSpeed;
 	lastPattern = pattern;
+  pinMode(4, INPUT); 
 }
 
 boolean check_serial()
 {
-	while (Serial.available())
-	{ //while there is data available on the serial monitor
-		int value = char(Serial.read());
-		Serial.println(value);
-		pattern = value % (int)'a';
-		Serial.println("Command:");
-		Serial.println(pattern);
-		SPEED = 1l;
-		return true;
-	}
+    int value = digitalRead(4);
+    Serial.println(value);
+    Serial.println(input);
+    Serial.println('-----');
+      Serial.println("Pattern:");
+      Serial.println(pattern);
+    
+    if (value != input) {
+      input = value;
+      pattern = ((pattern+1) % 26);
+      Serial.println("Command:");
+      Serial.println(pattern);
+      SPEED = 1l;
+      return true;
+    }
+    
 	return false;
 }
 
@@ -516,5 +522,165 @@ void show_color(CRGB color)
 // your leds.
 void loop()
 {
-	xmas();
+	Serial.println("Pattern:");
+	Serial.println(pattern);
+	Serial.println("High Speed:");
+	Serial.println(highSpeed);
+	if (highSpeed)
+	{
+		SPEED = 2000l;
+	}
+	else
+	{
+		SPEED = 40000l;
+	}
+	if (lastPattern != pattern)
+	{
+		clear();
+	}
+	switch (pattern)
+	{
+	case 0:
+		Serial.println("XMas");
+		xmas();
+		break;
+	case 1:
+		Serial.println("Fourth");
+		fourth();
+		break;
+	case 2:
+		Serial.println("Halloween");
+		halloweenShow();
+		break;
+	case 3:
+		Serial.println("Thanksgiving");
+		thanksgivingShow();
+		break;
+	case 4:
+		Serial.println("St Pats");
+		st_pats();
+		break;
+	case 5:
+		Serial.println("Valentines");
+		valentines();
+		break;
+	case 6:
+		Serial.println("Pink");
+		show_color(PINK);
+		break;
+	case 7:
+		Serial.println("Red");
+		show_color(CRGB(255, 0, 0));
+		break;
+	case 8:
+		Serial.println("White");
+		show_color(CRGB(255, 255, 255));
+		break;
+	case 9:
+		Serial.println("Blue");
+		show_color(CRGB(0, 0, 255));
+		break;
+	case 10:
+		Serial.println("Green");
+		show_color(CRGB(0, 255, 0));
+		break;
+	case 11:
+		Serial.println("Yellow");
+		show_color(CRGB(255, 180, 0));
+		break;
+	case 12:
+		Serial.println("Orange");
+		show_color(ORANGE);
+		break;
+	case 13:
+		Serial.println("Light Blue");
+		show_color(LIGHT_BLUE);
+		break;
+	case 14:
+		Serial.println("Purple");
+		show_color(CRGB(100, 0, 255));
+		break;
+	case 15:
+		Serial.println("Magenta");
+		show_color(CRGB(255, 0, 255));
+		break;
+	case 16:
+		Serial.println("Cyan");
+		show_color(CRGB(0, 255, 255));
+		break;
+	case 17:
+		Serial.println("Bears");
+		bears();
+		break;
+	case 18:
+		Serial.println("Easter");
+		easter();
+		break;
+	case 19:
+		Serial.println("Moving Rainbow");
+		for (int hue = 0; hue < 255; hue++)
+		{
+			fill_rainbow(leds, NUM_LEDS, hue, 7);
+			show();
+			delay(10l);
+			if (check_serial())
+				return;
+		}
+		break;
+	case 20:
+		Serial.println("Solid Rainbow");
+		fill_rainbow(leds, NUM_LEDS, 0, 7);
+		show();
+		delay(1000l);
+		if (check_serial())
+			return;
+		break;
+	case 21:
+		Serial.println("Random Cycle");
+		randomColor(randomColors2, 5);
+		if (check_serial())
+			return;
+		show();
+		delay(2000l);
+		break;
+	case 22:
+		Serial.println("Resetting Random Color");
+		r = random(0, 255);
+		g = random(0, 255);
+		b = random(0, 255);
+		pattern = 23;
+		break;
+	case 23:
+		Serial.println("Random Color");
+		showFixed(CRGB(r, g, b));
+		if (check_serial())
+			return;
+		delay(1000l);
+		break;
+	case 24:
+		Serial.println("Crazy");
+		flash(15, CRGB(255, 255, 255));
+		if (check_serial())
+			return;
+		break;
+
+	case 25:
+    Serial.println("Yellow White");
+    show_color(CRGB(140, 60, 20));
+    break;
+	default:
+		pattern = 0;
+	}
+	if (lastPattern != pattern)
+	{
+		Serial.println("Saving pattern");
+		EEPROM.put(0, pattern);
+	}
+	if (lastHighSpeed != highSpeed)
+	{
+		Serial.println("Saving highspeed");
+		EEPROM.put(sizeof(int), highSpeed);
+	}
+	lastPattern = pattern;
+	lastHighSpeed = highSpeed;
 }
