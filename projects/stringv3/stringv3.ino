@@ -1,0 +1,1002 @@
+// Use if you want to force the software SPI subsystem to be used for some reason (generally, you don't)
+// #define FASTLED_FORCE_SOFTWARE_SPI
+// Use if you want to force non-accelerated pin access (hlong: you really don't, it breaks lots of things)
+// #define FASTLED_FORCE_SOFTWARE_SPI
+// #define FASTLED_FORCE_SOFTWARE_PINS
+#include <FastLED.h>
+#include "MyLED2.h"
+#include <EEPROM.h>;
+///////////////////////////////////////////////////////////////////////////////////////////
+//
+// Move a white dot along the strip of leds.  This program simply shows how to configure the leds,
+// and then how to turn a single pixel white and then off, moving down the line of pixels.
+//
+
+// How many leds are in the strip?
+#define NUM_LEDS 400
+
+// Data pin that led data will be written out over
+#define DATA_PIN 2
+long SPEED = 2000l;
+// Clock pin only needed for SPI based chipsets when not using hardware SPI
+//#define CLOCK_PIN 8
+//#define DEBUG 1
+
+// This is an array of leds.  One item for each led in your strip.
+CRGBArray<NUM_LEDS> leds;
+const CRGB WHITE = CRGB(255, 255, 255);
+const CRGB PURPLE = CRGB(30, 0, 60);
+const CRGB ORANGE = CRGB(80, 20, 0);
+const CRGB BLACK = CRGB(0, 0, 0);
+const CRGB LIGHT_BLUE = CRGB(50, 50, 200);
+const CRGB PINK = CRGB(255, 30, 30);
+int r = random(0, 255);
+int g = random(0, 255);
+int b = random(0, 255);
+int pattern = 0;
+int input = -1;
+int off = 0;
+double pot1 = 255.0;
+double pot2 = 255.0;
+double pot3 = 255.0;
+double lastPot2 = 255.0;
+double lastPot3 = 255.0;
+boolean color_changed = false;
+int lastPattern = 0;
+CRGB randomColors2[] = {CRGB(255, 0, 0), CRGB(200, 150, 0), CRGB(0, 255, 0), CRGB(255, 0, 255), CRGB(0, 255, 255)};
+
+// This function sets up the ledsand tells the controller about them
+void setup()
+{
+	FastLED.addLeds<WS2811, DATA_PIN, RGB>(leds, NUM_LEDS);
+	Serial.begin(115200); //set baud rate
+	EEPROM.get(0, pattern);
+	debug("EEPROM Pattern:");
+	debug(pattern); //show the data
+	lastPattern = pattern;
+	pinMode(4, INPUT_PULLUP);
+	pinMode(5, INPUT_PULLUP);
+	//Stabalize potentiometer readings
+	for (int i = 0; i < 100; i++)
+	{
+		read_pots();
+		Serial.println("Pot2:");
+		Serial.println(pot2);
+		Serial.println("Pot1:");
+		Serial.println(pot1);
+	}
+	lastPot2 = pot2;
+	lastPot3 = pot3;
+}
+
+/**
+ * Read the potentiometers
+ */
+void read_pots()
+{
+	double newpot1 = ((double)analogRead(0) / 1024.0) * 255;
+	pot1 = (int)(0.25 * newpot1 + 0.75 * pot1);
+	double newpot2 = ((double)analogRead(1) / 1024.0) * 255;
+	pot2 = (int)(0.25 * newpot2 + 0.75 * pot2);
+	double newpot3 = ((double)analogRead(2) / 1024.0) * 255;
+	pot3 = (int)(0.25 * newpot3 + 0.75 * pot3);
+}
+
+class LED : public MyLED
+{
+  public:
+	boolean check_io()
+	{
+
+		int value = digitalRead(4);
+		off = digitalRead(5);
+		debug("Off");
+		debug(off);
+		debug(value);
+		debug(input);
+		debug('-----');
+		debug("Pattern:");
+		debug(pattern);
+		read_pots();
+		if (abs(pot2 - lastPot2) > 10 || abs(pot3 - lastPot3) > 10)
+		{
+			color_changed = true;
+		}
+
+		debug("Pot0:");
+		debug(pot1);
+		debug("Pot1:");
+		debug(pot2);
+
+		setBrightness();
+		if (input > -1 && value != input)
+		{
+			input = value;
+			pattern = ((pattern + 1) % 26);
+			Serial.println("Command:");
+			Serial.println(pattern);
+			lastPot2 = pot2;
+			lastPot3 = pot3;
+			color_changed = false;
+			return true;
+		}
+		else
+		{
+			input = value;
+		}
+
+		return false;
+	}
+}
+
+void
+pulse(CRGB color, long time, long pause)
+{
+	long fadeAmount = 1; // Set the amount to fade I usually do 5, 10, 15, 20, 25 etc even up to 255.
+	long pot1 = 0;
+	for (long i = 0; i < time; i += pause)
+	{
+		for (long i = 0; i < NUM_LEDS; i++)
+		{
+			leds[i] = color;
+			leds[i].fadeLightBy(pot1);
+		}
+		show();
+		delay(pause); // This delay sets speed of the fade. I usually do from 5-75 but you can always go higher.
+		pot1 = pot1 + fadeAmount;
+		// reverse the direction of the fading at the ends of the fade:
+		if (pot1 == 0 || pot1 == 255)
+		{
+			fadeAmount = -fadeAmount;
+		}
+		if (check_serial())
+			break;
+	}
+}
+
+void showFixed(CRGB color)
+{
+	leds.fill_solid(color);
+	show();
+}
+
+void showFixedHSV(CHSV hsv)
+{
+	for (int i = 0; i < NUM_LEDS; i++)
+	{
+		leds[i] = hsv;
+	}
+	show();
+}
+
+void showhue()
+{
+	CHSV hsv;
+	hsv.hue = pot2;
+	hsv.val = 255;
+	hsv.sat = pot3;
+	for (int i = 0; i < NUM_LEDS; i++)
+	{
+		leds[i] = hsv;
+	}
+	show();
+	delay(100);
+	check_serial();
+}
+
+void showFixedHalf(CRGB color)
+{
+	for (long i = 0; i < NUM_LEDS; i++)
+	{
+		if (i % 2 == 0)
+		{
+			leds[i] = color;
+		}
+		else
+		{
+			leds[i] = BLACK;
+		}
+	}
+	show();
+}
+
+void fadeall(long amount)
+{
+	for (long i = 0; i < NUM_LEDS; i++)
+	{
+		leds[i].nscale8(amount);
+	}
+}
+
+void flash(long loops, CRGB color)
+{
+	for (long i = 0; i < loops; i++)
+	{
+
+		showFixed(color);
+		delay(random(30, 100));
+		showFixed(BLACK);
+		delay(random(20, 100));
+	}
+}
+
+void flashHalf(long loops, CRGB color)
+{
+	for (long i = 0; i < loops; i++)
+	{
+
+		showFixedHalf(color);
+		delay(random(30, 100));
+		showFixedHalf(BLACK);
+		delay(random(20, 100));
+	}
+}
+
+void everyOtherHSV(CHSV one, CHSV two)
+{
+	for (long i = 0; i < NUM_LEDS; i++)
+	{
+		if (i % 2 == 0)
+		{
+			leds[i] = one;
+		}
+		else
+		{
+			leds[i] = two;
+		}
+	}
+}
+
+void everyOther(CRGB one, CRGB two)
+{
+	for (long i = 0; i < NUM_LEDS; i++)
+	{
+		if (i % 2 == 0)
+		{
+			leds[i] = one;
+		}
+		else
+		{
+			leds[i] = two;
+		}
+	}
+}
+
+void randomColor(CRGB colors[], int numColors)
+{
+	int j = 0;
+	for (long i = 0; i < NUM_LEDS; i++)
+	{
+		CRGB color;
+		if (i == 0)
+		{
+			color = colors[random(0, numColors - 1)];
+		}
+		else
+		{
+			color = leds[i - 1];
+			while (color == leds[i - 1])
+			{
+				long rand = random(0, numColors - 1);
+				color = colors[rand];
+			}
+		}
+		leds[i] = color;
+	}
+	show();
+}
+
+void everyThird(CRGB one, CRGB two, CRGB three)
+{
+	int j = 0;
+	for (long i = 0; i < NUM_LEDS; i++)
+	{
+
+		if (j == 0)
+		{
+			leds[i] = one;
+		}
+		else if (j == 1)
+		{
+			leds[i] = two;
+		}
+		else
+		{
+			leds[i] = three;
+			j = -1;
+		}
+		j++;
+	}
+}
+
+void everyFourth(CRGB one, CRGB two, CRGB three, CRGB four)
+{
+	int j = 0;
+	for (long i = 0; i < NUM_LEDS; i++)
+	{
+
+		if (j == 0)
+		{
+			leds[i] = one;
+		}
+		else if (j == 1)
+		{
+			leds[i] = two;
+		}
+		else if (j == 2)
+		{
+			leds[i] = three;
+		}
+		else
+		{
+			leds[i] = four;
+			j = -1;
+		}
+		j++;
+	}
+}
+
+void halloween(long time, long pause)
+{
+	for (long i = 0; i < time; i += 2 * pause)
+	{
+		if (check_serial())
+			break;
+		everyOther(PURPLE, ORANGE);
+		show();
+		if (check_serial())
+			break;
+		delay_and_check(pause);
+		everyOther(ORANGE, PURPLE);
+		show();
+		if (check_serial())
+			break;
+		delay_and_check(pause);
+	}
+}
+
+boolean switchColor(long time, long pause, CRGB one, CRGB two)
+{
+	for (long i = 0; i < time; i += 2 * pause)
+	{
+		if (check_serial())
+			return true;
+		everyOther(one, two);
+		show();
+		if (delay_and_check(pause))
+			return true;
+		show();
+		if (delay_and_check(pause))
+			return true;
+	}
+}
+
+boolean delay_and_check(long pause)
+{
+	if (pause < 50)
+	{
+		delay(pause);
+		return check_serial();
+	}
+	for (long i = 0; i < pause; i += 50)
+	{
+		delay(50);
+		//	Serial.println(i);
+		if (check_serial())
+			return true;
+	}
+	return false;
+}
+
+boolean chase(long length, long time, long pause, CRGB one, CRGB two)
+{
+	long i;
+	for (long k = 0; k < time; k += pause)
+	{
+		i = i + 1;
+		for (long j = 0; j < NUM_LEDS; j++)
+		{
+			long mod = (j + i) % (2 * length);
+			if (mod < length)
+			{
+				leds[j] = one;
+			}
+			else
+			{
+				leds[j] = two;
+			}
+		}
+		show();
+
+		if (delay_and_check(pause))
+		{
+			return true;
+		}
+	}
+}
+
+void every_other_adjustable(CHSV one, CHSV two)
+{
+
+	for (int i = 1; i < 20; i++)
+	{
+		if (color_changed)
+		{
+			one = CHSV(pot2, 255, 255);
+			two = CHSV(pot3, 255, 255);
+		}
+		everyOtherHSV(one, two);
+		show();
+		if (delay_and_check(100l))
+			return;
+	}
+}
+
+void flashing_every_other_adjustable(CHSV one, CHSV two)
+{
+
+	for (int i = 1; i < 20; i++)
+	{
+		if (color_changed)
+		{
+			one = CHSV(pot2, 255, 255);
+			two = CHSV(pot3, 255, 255);
+		}
+		everyOtherHSV(one, two);
+		show();
+		if (delay_and_check(100l))
+			return;
+	}
+	for (int i = 1; i < 20; i++)
+	{
+		if (color_changed)
+		{
+			one = CHSV(pot2, 255, 255);
+			two = CHSV(pot3, 255, 255);
+		}
+		everyOtherHSV(two, one);
+		show();
+		if (delay_and_check(100l))
+			return;
+	}
+}
+boolean chaseUserSet(long length, long time, long pause)
+{
+	long i;
+
+	for (long k = 0; k < time; k += pause)
+	{
+		CHSV one;
+		one.hue = pot3;
+		one.val = 255;
+		one.sat = 255;
+		CHSV two;
+		two.hue = pot2;
+		two.val = 255;
+		two.sat = 255;
+		i = i + 1;
+		for (long j = 0; j < NUM_LEDS; j++)
+		{
+			long mod = (j + i) % (2 * length);
+			if (mod < length)
+			{
+				leds[j] = one;
+			}
+			else
+			{
+				leds[j] = two;
+			}
+		}
+		show();
+
+		if (delay_and_check(pause))
+		{
+			return true;
+		}
+	}
+}
+
+void chaseThree(long length, long time, long pause, CRGB one, CRGB two, CRGB three)
+{
+	long i;
+	for (long k = 0; k < time; k += pause)
+	{
+		i = i + 1;
+		for (long j = 0; j < NUM_LEDS; j++)
+		{
+			long mod = ((j + i) / (3 * length)) % 3;
+			if (mod == 0)
+			{
+				leds[j] = one;
+			}
+			else if (mod == 1)
+			{
+				leds[j] = two;
+			}
+			else
+			{
+				leds[j] = three;
+			}
+		}
+		show();
+		if (check_serial())
+			break;
+		delay_and_check(pause);
+	}
+}
+
+void clear()
+{
+	for (int i = 0; i < NUM_LEDS; i++)
+	{
+		leds[i] = BLACK;
+	}
+	show();
+}
+void show()
+{
+	FastLED.show();
+}
+void halloweenShow()
+{
+	clear();
+
+	if (check_serial())
+		return;
+	pulse(CRGB(0, 200, 0), SPEED * 4l, 20);
+	if (check_serial())
+		return;
+	flash(15, CRGB(0, 200, 0));
+	if (check_serial())
+		return;
+	pulse(PURPLE, SPEED * 4l, 20);
+	if (check_serial())
+		return;
+	flash(15, PURPLE);
+	if (check_serial())
+		return;
+	pulse(ORANGE, SPEED * 4l, 20);
+	if (check_serial())
+		return;
+	flash(15, ORANGE);
+	if (check_serial())
+		return;
+	chase(14, SPEED * 4l, 50, CRGB(0, 255, 0), BLACK);
+	if (check_serial())
+		return;
+	flash(15, CRGB(0, 200, 0));
+	if (check_serial())
+		return;
+	halloween(SPEED * 4l, 1000);
+	if (check_serial())
+		return;
+	flash(15, PURPLE);
+	if (check_serial())
+		return;
+	chase(10, SPEED * 4l, 50, ORANGE, PURPLE);
+	if (check_serial())
+		return;
+	flashHalf(15, WHITE);
+}
+
+void thanksgivingShow()
+{
+	if (check_serial())
+		return;
+	everyThird(CRGB(255, 0, 0), CRGB(200, 100, 0), ORANGE);
+	if (check_serial())
+		return;
+	show();
+	delay_and_check(2000l);
+	everyThird(CRGB(200, 100, 0), ORANGE, CRGB(255, 0, 0));
+	if (check_serial())
+		return;
+	show();
+	delay_and_check(2000l);
+}
+
+void valentines()
+{
+	if (check_serial())
+		return;
+	chase(14, SPEED * 4l, 50, CRGB(255, 0, 0), CRGB(255, 30, 30));
+	showFixed(CRGB(255, 0, 0));
+	for (int i = 0; i < 20; i++)
+	{
+		if (delay_and_check(SPEED / 20))
+			return;
+	}
+	showFixed(CRGB(255, 30, 30));
+	for (int i = 0; i < 20; i++)
+	{
+		if (delay_and_check(SPEED / 20))
+			return;
+	}
+}
+
+void fourth()
+{
+	chaseThree(5, SPEED * 4l, 100, CRGB(255, 0, 0), CRGB(200, 200, 200), CRGB(0, 0, 200));
+	if (check_serial())
+		return;
+	everyThird(CRGB(255, 0, 0), CRGB(200, 200, 200), CRGB(0, 0, 200));
+	if (check_serial())
+		return;
+	show();
+	if (delay_and_check(SPEED))
+		return;
+
+	for (int i = 0; i < 20; i++)
+	{
+		showFixed(CRGB(255, 0, 0));
+		if (delay_and_check(2000))
+			return;
+		showFixed(CRGB(200, 200, 200));
+		if (delay_and_check(2000))
+			return;
+		showFixed(CRGB(0, 0, 200));
+		if (delay_and_check(2000))
+			return;
+	}
+}
+
+// void xmas()
+// {
+
+// 	boolean done = chase(10, SPEED * 4l, 100, CRGB(255, 0, 0), CRGB(0, 255, 0));
+// 	if (done)
+// 		return;
+// 	if (check_serial())
+// 		return;
+// 	done = chase(10, SPEED * 4l, 100, CRGB(255, 0, 0), CRGB(200, 200, 200));
+// 	if (done)
+// 		return;
+// 	if (check_serial())
+// 		return;
+// 	done = switchColor(SPEED * 4l, 1000, CRGB(0, 0, 255), CRGB(200, 200, 200));
+// 	if (done)
+// 		return;
+
+// 	if (check_serial())
+// 		return;
+// 	CRGB randomColors[] = {CRGB(255, 0, 0), CRGB(200, 150, 0), CRGB(0, 255, 0), CRGB(255, 0, 255), CRGB(0, 255, 255)};
+// 	randomColor(randomColors, 5);
+// 	if (check_serial())
+// 		return;
+// }
+
+void bears()
+{
+	chase(10, SPEED * 4l, 100, CRGB(0, 0, 200), ORANGE);
+}
+void st_pats()
+{
+	if (check_serial())
+		return;
+	showFixed(CRGB(0, 240, 0));
+	if (check_serial())
+		return;
+	for (int i = 0; i < 20; i++)
+	{
+		if (check_serial())
+			return;
+		delay(SPEED / 20);
+	}
+	if (check_serial())
+		return;
+	chase(10, SPEED * 4l, 100, CRGB(0, 255, 0), CRGB(200, 200, 200));
+}
+
+void easter()
+{
+	everyFourth(PINK, LIGHT_BLUE, CRGB(230, 150, 0), CRGB(50, 255, 50));
+	if (check_serial())
+		return;
+	show();
+	delay(2000l);
+	everyFourth(LIGHT_BLUE, CRGB(230, 150, 0), CRGB(50, 255, 50), PINK);
+	if (check_serial())
+		return;
+	show();
+	delay(2000l);
+}
+
+void sparkle_decay(CHSV color)
+{
+	for (int i = 0; i < NUM_LEDS; i++)
+	{
+		leds[i] = BLACK;
+	}
+	while (!check_serial())
+	{
+		if (delay_and_check(20l))
+			return;
+		if (color_changed)
+		{
+			color = CHSV(pot2, pot3, 255);
+		}
+		leds[random(0, NUM_LEDS - 1)] = color;
+		for (int i = 0; i < NUM_LEDS; i++)
+		{
+			leds[i] = leds[i].fadeToBlackBy(10);
+		}
+		show();
+	}
+}
+
+void random_sparkle_decay()
+{
+	CHSV color;
+	for (int i = 0; i < NUM_LEDS; i++)
+	{
+		leds[i] = BLACK;
+	}
+	while (!check_serial())
+	{
+		if (delay_and_check(20l))
+			return;
+		color = CHSV(random(255), random(255), 255);
+		leds[random(0, NUM_LEDS - 1)] = color;
+		for (int i = 0; i < NUM_LEDS; i++)
+		{
+			leds[i] = leds[i].fadeToBlackBy(10);
+		}
+		show();
+	}
+}
+
+void running_chase(CHSV color)
+{
+	for (int i = 0; i < NUM_LEDS; i++)
+	{
+		leds[i] = BLACK;
+	}
+	long index = 0l;
+	while (!check_serial())
+	{
+
+		if (delay_and_check(5l))
+			return;
+		if (color_changed)
+		{
+			color = CHSV(pot2, pot3, 255);
+		}
+		color = CHSV(color.hue, 2 * abs(127 - (index * 5) % 255), 255);
+		leds[0] = color;
+		for (int i = NUM_LEDS - 1; i > 0; i--)
+		{
+			leds[i] = leds[i - 1];
+		}
+		index++;
+		show();
+	}
+}
+void running_color()
+{
+	CHSV color;
+	for (int i = 0; i < NUM_LEDS; i++)
+	{
+		leds[i] = BLACK;
+	}
+	while (!check_serial())
+	{
+		if (delay_and_check(5l))
+			return;
+		color = CHSV(pot2, pot3, 255);
+		leds[0] = color;
+		for (int i = NUM_LEDS - 1; i > 0; i--)
+		{
+			leds[i] = leds[i - 1];
+		}
+		show();
+	}
+}
+
+void show_color(CRGB color)
+{
+	showFixed(color);
+	delay(100);
+	check_serial();
+}
+
+void show_color_adjustable(CHSV color)
+{
+	if (!color_changed)
+	{
+		showFixedHSV(color);
+	}
+	else
+	{
+		CHSV hsv = CHSV(pot2, pot3, 255);
+		showFixedHSV(hsv);
+	}
+	setBrightness();
+	delay(100);
+	check_serial();
+}
+
+void setBrightness()
+{
+	debug(off);
+	if (off == 1)
+	{
+		debug("Turning off");
+		FastLED.setBrightness(0);
+	}
+	else
+	{
+		debug("Setting pot1");
+		debug(pot1);
+		FastLED.setBrightness(pot1);
+	}
+	show();
+}
+
+void debug(const String &s)
+{
+#ifdef DEBUG
+	Serial.println(s);
+#endif
+}
+
+void debug(long l)
+{
+#ifdef DEBUG
+	Serial.println(l);
+#endif
+}
+
+void debug(int i)
+{
+#ifdef DEBUG
+	Serial.println(i);
+#endif
+}
+
+void debug(double d)
+{
+#ifdef DEBUG
+	Serial.println(d);
+#endif
+}
+
+void debug(boolean b)
+{
+#ifdef DEBUG
+	Serial.println(b);
+#endif
+}
+
+// This function runs over and over, and is where you do the magic to light
+// your leds.
+void loop()
+{
+	CHSV one;
+	CHSV two;
+	debug("Pattern   1:");
+	debug(pattern);
+	setBrightness();
+
+	if (lastPattern != pattern)
+	{
+		clear();
+	}
+	switch (pattern)
+	{
+	case 0:
+		debug("XMas");
+		myLED.xmas();
+		break;
+	case 1:
+		debug("Red/White");
+		every_other_adjustable(CHSV(255, 0, 255), CHSV(255, 255, 255));
+		break;
+	case 2:
+		debug("White/Blue");
+		every_other_adjustable(CHSV(255, 0, 255), CHSV(160, 255, 255));
+		break;
+	case 3:
+		debug("Red/Green");
+		every_other_adjustable(CHSV(255, 255, 255), CHSV(100, 255, 255));
+		break;
+	case 4:
+		debug("Pink");
+		setBrightness();
+		show_color_adjustable(CHSV(255, 150, 255));
+		break;
+	case 5:
+		debug("Red");
+		setBrightness();
+		show_color_adjustable(CHSV(255, 255, 255));
+		break;
+	case 6:
+		debug("White");
+		setBrightness();
+		show_color_adjustable(CHSV(255, 0, 255));
+		break;
+	case 7:
+		debug("Blue");
+		setBrightness();
+		show_color_adjustable(CHSV(160, 255, 255));
+		break;
+	case 8:
+		debug("Green");
+		setBrightness();
+		show_color_adjustable(CHSV(100, 255, 255));
+		break;
+	case 9:
+		debug("Light Blue");
+		setBrightness();
+		show_color_adjustable(CHSV(160, 150, 255));
+		break;
+	case 10:
+		debug("Random Cycle");
+		setBrightness();
+		randomColor(randomColors2, 5);
+		if (check_serial())
+			return;
+		show();
+		delay(2000l);
+		break;
+
+	case 11:
+		debug("Yellow White");
+		setBrightness();
+		show_color_adjustable(CHSV(34, 178, 255));
+		break;
+	case 12:
+		debug("White/Blue alternate");
+		flashing_every_other_adjustable(CHSV(255, 0, 255), CHSV(160, 255, 255));
+		break;
+	case 13:
+		debug("Red/white alternate");
+		flashing_every_other_adjustable(CHSV(255, 0, 255), CHSV(255, 255, 255));
+		break;
+	case 14:
+		debug("Blue white");
+		show_color_adjustable(CHSV(160, 80, 255));
+		break;
+	case 15:
+		debug("Sparkle Decay");
+		setBrightness();
+		sparkle_decay(CHSV(255, 0, 255));
+		break;
+	case 16:
+		debug("Thanksgiving");
+		setBrightness();
+		thanksgivingShow();
+		break;
+	case 17:
+		debug("User set pot2");
+		showhue();
+		setBrightness();
+		break;
+	case 18:
+		debug("User set chase");
+		chaseUserSet(10, SPEED * 4l, 50);
+
+		break;
+	case 19:
+		debug("Random sparkle/decay");
+		random_sparkle_decay();
+
+		break;
+	case 20:
+		debug("Running sum");
+		running_color();
+
+		break;
+	case 21:
+		debug("Running chase");
+		running_chase(CHSV(255, 255, 255));
+
+	default:
+		pattern = 0;
+	}
+	if (lastPattern != pattern)
+	{
+		debug("Saving pattern");
+		EEPROM.put(0, pattern);
+	}
+	lastPattern = pattern;
+}
