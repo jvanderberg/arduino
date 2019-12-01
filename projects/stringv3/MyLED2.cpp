@@ -9,15 +9,3 @@
 #include "Arduino.h"
 #include "MyLED2.h"
 #include <FastLED.h>
-
-MyLED::MyLED(long speed, int num_leds)
-{
-	_speed = speed;
-	_num_leds = num_leds;
-}
-
-void MyLED::xmas()
-{
-
-	return;
-}
