@@ -18,11 +18,7 @@ template <int NUM_LEDS>
 class MyLED
 {
   public:
-	MyLED(long speed, CRGBArray<NUM_LEDS> leds)
-	{
-		_speed = speed;
-		_leds = leds;
-	}
+	MyLED(long speed, CRGBArray<NUM_LEDS> &leds) : _speed(speed), _leds(leds) {}
 	void clear()
 	{
 		for (int i = 0; i < NUM_LEDS; i++)
@@ -80,6 +76,7 @@ class MyLED
 			if (delay_and_check(pause))
 				return true;
 		}
+		return false;
 	}
 	void randomColor(CRGB colors[], int numColors)
 	{
@@ -133,17 +130,17 @@ class MyLED
 	}
 
 	boolean chase(long length, long time, long pause, CRGB one, CRGB two);
-	boolean check_io() {}
+	virtual boolean check_io() { return false; }
 
   protected:
 	long _speed;
-	CRGBArray<NUM_LEDS> _leds;
+	CRGBArray<NUM_LEDS> &_leds;
 };
 
 template <int NUM_LEDS>
 boolean MyLED<NUM_LEDS>::chase(long length, long time, long pause, CRGB one, CRGB two)
 {
-	long i;
+	long i = 0;
 	for (long k = 0; k < time; k += pause)
 	{
 		i = i + 1;
@@ -166,5 +163,6 @@ boolean MyLED<NUM_LEDS>::chase(long length, long time, long pause, CRGB one, CRG
 			return true;
 		}
 	}
+	return false;
 }
 #endif
