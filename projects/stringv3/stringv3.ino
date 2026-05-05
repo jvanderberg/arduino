@@ -125,7 +125,7 @@ class LED : public MyLED<NUM_LEDS>
 	}
 };
 
-LED<NUM_LEDS> myLED(SPEED, leds);
+LED myLED(SPEED, leds);
 
 boolean check_serial()
 {

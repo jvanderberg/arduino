@@ -1,686 +1,267 @@
-// Use if you want to force the software SPI subsystem to be used for some reason (generally, you don't)
-// #define FASTLED_FORCE_SOFTWARE_SPI
-// Use if you want to force non-accelerated pin access (hlong: you really don't, it breaks lots of things)
-// #define FASTLED_FORCE_SOFTWARE_SPI
-// #define FASTLED_FORCE_SOFTWARE_PINS
-#include "FastLED.h"
+#include "LEDAnimator.h"
+#include <EEPROM.h>
 
-#include <EEPROM.h>;
-///////////////////////////////////////////////////////////////////////////////////////////
-//
-// Move a white dot along the strip of leds.  This program simply shows how to configure the leds,
-// and then how to turn a single pixel white and then off, moving down the line of pixels.
-//
-
-// How many leds are in the strip?
-#define NUM_LEDS 200
-
-// Data pin that led data will be written out over
+// Hardware configuration
+#define NUM_LEDS 300
 #define DATA_PIN 2
-long SPEED = 2000l;
-// Clock pin only needed for SPI based chipsets when not using hardware SPI
-//#define CLOCK_PIN 8
+#define BUTTON_PIN 7
 
-// This is an array of leds.  One item for each led in your strip.
-CRGBArray<NUM_LEDS> leds;
-const CRGB WHITE = CRGB(255, 255, 255);
-const CRGB PURPLE = CRGB(30, 0, 60);
-const CRGB ORANGE = CRGB(80, 20, 0);
-const CRGB BLACK = CRGB(0, 0, 0);
-const CRGB LIGHT_BLUE = CRGB(50, 50, 200);
-const CRGB PINK = CRGB(255, 30, 30);
-int r = random(0, 255);
-int g = random(0, 255);
-int b = random(0, 255);
+// #define DEBUG 1
+
+// Timings preserved from the original SPEED-based code
+// (SPEED was effectively 40000ms; SPEED*4 was the long animation budget)
+#define SHORT_DELAY    2000l
+#define LONG_DELAY     40000l
+#define ANIMATION_TIME 160000l
+
+// LED array (Color is layout-compatible with CRGB)
+Color leds[NUM_LEDS];
+
+// Application state
 int pattern = 0;
-int input = 0;
-boolean highSpeed = false;
-int lastPattern = 0;
-boolean lastHighSpeed = false;
-CRGB randomColors2[] = {CRGB(255, 0, 0), CRGB(200, 150, 0), CRGB(0, 255, 0), CRGB(255, 0, 255), CRGB(0, 255, 255)};
+int lastPattern = -1;
+int buttonState = -1;
+int randR = 0, randG = 0, randB = 0;
 
-// This function sets up the ledsand tells the controller about them
-void setup()
-{
-	FastLED.addLeds<WS2811, DATA_PIN, RGB>(leds, NUM_LEDS);
-	Serial.begin(115200); //set baud rate
-	EEPROM.get(0, pattern);
-	Serial.println("EEPROM Pattern:");
-	Serial.println(pattern); //show the data
-	Serial.println(highSpeed); //show the data
-	lastHighSpeed = highSpeed;
-	lastPattern = pattern;
-  pinMode(4, INPUT); 
+// Color palette for random patterns
+Color randomPalette[] = {Color(255, 0, 0), Color(200, 150, 0), Color(0, 255, 0), Color(255, 0, 255), Color(0, 255, 255)};
+
+// Forward declarations
+void debug(const String &s);
+void debug(int i);
+
+// === Input Checking ===
+bool checkInput();
+
+// Create the animator with our abort callback
+LEDAnimator animator(leds, NUM_LEDS, checkInput);
+
+// === Composite Patterns ===
+
+void show_color(CRGB color) {
+    animator.fill(color);
+    animator.delayAndCheck(LONG_DELAY);
 }
 
-boolean check_serial()
-{
-    int value = digitalRead(4);
-    Serial.println(value);
-    Serial.println(input);
-    Serial.println('-----');
-      Serial.println("Pattern:");
-      Serial.println(pattern);
-    
-    if (value != input) {
-      input = value;
-      pattern = ((pattern+1) % 26);
-      Serial.println("Command:");
-      Serial.println(pattern);
-      SPEED = 1l;
-      return true;
+void halloweenShow() {
+    animator.clear();
+    if (animator.pulse(CRGB(0, 200, 0), ANIMATION_TIME)) return;
+    if (animator.flash(15, CRGB(0, 200, 0))) return;
+    if (animator.pulse(LED_PURPLE, ANIMATION_TIME)) return;
+    if (animator.flash(15, LED_PURPLE)) return;
+    if (animator.pulse(LED_ORANGE, ANIMATION_TIME)) return;
+    if (animator.flash(15, LED_ORANGE)) return;
+    if (animator.chase(14, CRGB(0, 255, 0), CRGB::Black, ANIMATION_TIME)) return;
+    if (animator.flash(15, CRGB(0, 200, 0))) return;
+    if (animator.alternate(LED_PURPLE, LED_ORANGE, ANIMATION_TIME, 1000)) return;
+    if (animator.flash(15, LED_PURPLE)) return;
+    if (animator.chase(10, LED_ORANGE, LED_PURPLE, ANIMATION_TIME)) return;
+    animator.flashHalf(15, LED_WHITE);
+}
+
+void thanksgivingShow() {
+    animator.everyThird(CRGB(255, 0, 0), CRGB(200, 100, 0), LED_ORANGE);
+    animator.show();
+    if (animator.delayAndCheck(2000)) return;
+    animator.everyThird(CRGB(200, 100, 0), LED_ORANGE, CRGB(255, 0, 0));
+    animator.show();
+    animator.delayAndCheck(2000);
+}
+
+void valentines() {
+    if (animator.chase(14, CRGB(255, 0, 0), CRGB(255, 30, 30), 20000l)) return;
+    animator.fill(CRGB(255, 0, 0));
+    if (animator.delayAndCheck(20000l)) return;
+    animator.fill(CRGB(255, 30, 30));
+    animator.delayAndCheck(20000l);
+}
+
+void fourth() {
+    if (animator.chaseThree(5, CRGB(255, 0, 0), CRGB(200, 200, 200), CRGB(0, 0, 200), ANIMATION_TIME)) return;
+    animator.everyThird(CRGB(255, 0, 0), CRGB(200, 200, 200), CRGB(0, 0, 200));
+    animator.show();
+    if (animator.delayAndCheck(LONG_DELAY)) return;
+    for (int i = 0; i < 20; i++) {
+        animator.fill(CRGB(255, 0, 0));
+        if (animator.delayAndCheck(2000)) return;
+        animator.fill(CRGB(200, 200, 200));
+        if (animator.delayAndCheck(2000)) return;
+        animator.fill(CRGB(0, 0, 200));
+        if (animator.delayAndCheck(2000)) return;
     }
-    
-	return false;
 }
 
-void pulse(CRGB color, long time, long pause)
-{
-	long fadeAmount = 1; // Set the amount to fade I usually do 5, 10, 15, 20, 25 etc even up to 255.
-	long brightness = 0;
-	for (long i = 0; i < time; i += pause)
-	{
-		for (long i = 0; i < NUM_LEDS; i++)
-		{
-			leds[i] = color;
-			leds[i].fadeLightBy(brightness);
-		}
-		show();
-		delay(pause); // This delay sets speed of the fade. I usually do from 5-75 but you can always go higher.
-		brightness = brightness + fadeAmount;
-		// reverse the direction of the fading at the ends of the fade:
-		if (brightness == 0 || brightness == 255)
-		{
-			fadeAmount = -fadeAmount;
-		}
-		if (check_serial())
-			break;
-	}
+void xmas() {
+    if (animator.chase(10, CRGB(255, 0, 0), CRGB(0, 255, 0), ANIMATION_TIME, 100)) return;
+    if (animator.chase(10, CRGB(255, 0, 0), CRGB(200, 200, 200), ANIMATION_TIME, 100)) return;
+    if (animator.alternate(CRGB(0, 0, 255), CRGB(200, 200, 200), ANIMATION_TIME, 1000)) return;
+    animator.randomFill(randomPalette, 5);
+    animator.delayAndCheck(2000);
 }
 
-void showFixed(CRGB color)
-{
-	leds.fill_solid(color);
-	show();
+void bears() {
+    animator.chase(10, CRGB(0, 0, 200), LED_ORANGE, ANIMATION_TIME, 100);
 }
 
-void showFixedHalf(CRGB color)
-{
-	for (long i = 0; i < NUM_LEDS; i++)
-	{
-		if (i % 2 == 0)
-		{
-			leds[i] = color;
-		}
-		else
-		{
-			leds[i] = BLACK;
-		}
-	}
-	show();
+void st_pats() {
+    animator.fill(CRGB(0, 240, 0));
+    if (animator.delayAndCheck(SHORT_DELAY * 20)) return;
+    animator.chase(10, CRGB(0, 255, 0), CRGB(200, 200, 200), ANIMATION_TIME, 100);
 }
 
-void fadeall(long amount)
-{
-	for (long i = 0; i < NUM_LEDS; i++)
-	{
-		leds[i].nscale8(amount);
-	}
+void easter() {
+    animator.everyFourth(LED_PINK, LED_LIGHT_BLUE, CRGB(230, 150, 0), CRGB(50, 255, 50));
+    animator.show();
+    if (animator.delayAndCheck(2000)) return;
+    animator.everyFourth(LED_LIGHT_BLUE, CRGB(230, 150, 0), CRGB(50, 255, 50), LED_PINK);
+    animator.show();
+    animator.delayAndCheck(2000);
 }
 
-void flash(long loops, CRGB color)
-{
-	for (long i = 0; i < loops; i++)
-	{
-
-		showFixed(color);
-		delay(random(30, 100));
-		showFixed(BLACK);
-		delay(random(20, 100));
-	}
+void movingRainbow() {
+    CRGB* rgb = reinterpret_cast<CRGB*>(leds);
+    for (int base = 0; base < 256; base += 2) {
+        for (int i = 0; i < NUM_LEDS; i++) {
+            CHSV hsv((uint8_t)(base + i * 7), 255, 255);
+            hsv2rgb_spectrum(hsv, rgb[i]);
+        }
+        animator.show();
+        if (animator.delayAndCheck(20)) return;
+    }
 }
 
-void flashHalf(long loops, CRGB color)
-{
-	for (long i = 0; i < loops; i++)
-	{
-
-		showFixedHalf(color);
-		delay(random(30, 100));
-		showFixedHalf(BLACK);
-		delay(random(20, 100));
-	}
+void solidRainbow() {
+    fill_rainbow(reinterpret_cast<CRGB*>(leds), NUM_LEDS, 0, 7);
+    animator.show();
+    animator.delayAndCheck(1000);
 }
 
-void everyOther(CRGB one, CRGB two)
-{
-	for (long i = 0; i < NUM_LEDS; i++)
-	{
-		if (i % 2 == 0)
-		{
-			leds[i] = one;
-		}
-		else
-		{
-			leds[i] = two;
-		}
-	}
+void randomCycle() {
+    animator.randomFill(randomPalette, 5);
+    animator.delayAndCheck(2000);
 }
 
-void randomColor(CRGB colors[], int numColors)
-{
-	int j = 0;
-	for (long i = 0; i < NUM_LEDS; i++)
-	{
-		CRGB color;
-		if (i == 0)
-		{
-			color = colors[random(0, numColors - 1)];
-		}
-		else
-		{
-			color = leds[i - 1];
-			while (color == leds[i - 1])
-			{
-				long rand = random(0, numColors - 1);
-				color = colors[rand];
-			}
-		}
-		leds[i] = color;
-	}
+void randomColor() {
+    if (lastPattern != pattern) {
+        randR = random(0, 255);
+        randG = random(0, 255);
+        randB = random(0, 255);
+    }
+    animator.fill(CRGB(randR, randG, randB));
+    animator.delayAndCheck(1000);
 }
 
-void everyThird(CRGB one, CRGB two, CRGB three)
-{
-	int j = 0;
-	for (long i = 0; i < NUM_LEDS; i++)
-	{
-
-		if (j == 0)
-		{
-			leds[i] = one;
-		}
-		else if (j == 1)
-		{
-			leds[i] = two;
-		}
-		else
-		{
-			leds[i] = three;
-			j = -1;
-		}
-		j++;
-	}
+void snowfall() {
+    animator.sparkleDecay(CRGB(180, 200, 255), CRGB::Black);
 }
 
-void everyFourth(CRGB one, CRGB two, CRGB three, CRGB four)
-{
-	int j = 0;
-	for (long i = 0; i < NUM_LEDS; i++)
-	{
-
-		if (j == 0)
-		{
-			leds[i] = one;
-		}
-		else if (j == 1)
-		{
-			leds[i] = two;
-		}
-		else if (j == 2)
-		{
-			leds[i] = three;
-		}
-		else
-		{
-			leds[i] = four;
-			j = -1;
-		}
-		j++;
-	}
+void sparkleDecayWhite() {
+    animator.sparkleDecay(CRGB(255, 255, 255), CRGB::Black);
 }
 
-void halloween(long time, long pause)
-{
-	for (long i = 0; i < time; i += 2 * pause)
-	{
-		if (check_serial())
-			break;
-		everyOther(PURPLE, ORANGE);
-		show();
-		if (check_serial())
-			break;
-		delay(pause);
-		everyOther(ORANGE, PURPLE);
-		show();
-		if (check_serial())
-			break;
-		delay(pause);
-	}
+void sparkleDecayGold() {
+    animator.sparkleDecay(CRGB(255, 255, 255), CRGB(60, 30, 0));
 }
 
-void switchColor(long time, long pause, CRGB one, CRGB two)
-{
-	for (long i = 0; i < time; i += 2 * pause)
-	{
-		if (check_serial())
-			break;
-		everyOther(one, two);
-		show();
-		if (check_serial())
-			break;
-		delay(pause);
-		if (check_serial())
-			break;
-		show();
-		if (check_serial())
-			break;
-		delay(pause);
-	}
+void pink()       { show_color(LED_PINK); }
+void red()        { show_color(CRGB(255, 0, 0)); }
+void white()      { show_color(CRGB(255, 255, 255)); }
+void blue()       { show_color(CRGB(0, 0, 255)); }
+void green()      { show_color(CRGB(0, 255, 0)); }
+void yellow()     { show_color(CRGB(255, 180, 0)); }
+void orange()     { show_color(LED_ORANGE); }
+void lightBlue()  { show_color(LED_LIGHT_BLUE); }
+void purple()     { show_color(CRGB(100, 0, 255)); }
+void magenta()    { show_color(CRGB(255, 0, 255)); }
+void cyan()       { show_color(CRGB(0, 255, 255)); }
+void yellowWhite(){ show_color(CRGB(140, 60, 20)); }
+
+// === Pattern Table ===
+
+struct Pattern {
+    const char* name;
+    void (*run)();
+};
+
+const Pattern patterns[] = {
+    {"XMas",            xmas},
+    {"Fourth",          fourth},
+    {"Halloween",       halloweenShow},
+    {"Thanksgiving",    thanksgivingShow},
+    {"St Pats",         st_pats},
+    {"Valentines",      valentines},
+    {"Snowfall",        snowfall},
+    {"Sparkle White",   sparkleDecayWhite},
+    {"Sparkle Gold",    sparkleDecayGold},
+    {"Pink",            pink},
+    {"Red",             red},
+    {"White",           white},
+    {"Blue",            blue},
+    {"Green",           green},
+    {"Yellow",          yellow},
+    {"Orange",          orange},
+    {"Light Blue",      lightBlue},
+    {"Purple",          purple},
+    {"Magenta",         magenta},
+    {"Cyan",            cyan},
+    {"Bears",           bears},
+    {"Easter",          easter},
+    {"Moving Rainbow",  movingRainbow},
+    {"Solid Rainbow",   solidRainbow},
+    {"Random Cycle",    randomCycle},
+    {"Random Color",    randomColor},
+    {"Yellow White",    yellowWhite},
+};
+const int NUM_PATTERNS = sizeof(patterns) / sizeof(patterns[0]);
+
+bool checkInput() {
+    int value = digitalRead(BUTTON_PIN);
+    if (buttonState > -1 && value != buttonState) {
+        buttonState = value;
+        pattern = (pattern + 1) % NUM_PATTERNS;
+        return true;
+    }
+    buttonState = value;
+    return false;
 }
 
-void chase(long length, long time, long pause, CRGB one, CRGB two)
-{
-	long i;
-	for (long k = 0; k < time; k += pause)
-	{
-		i = i + 1;
-		for (long j = 0; j < NUM_LEDS; j++)
-		{
-			long mod = (j + i) % (2 * length);
-			if (mod < length)
-			{
-				leds[j] = one;
-			}
-			else
-			{
-				leds[j] = two;
-			}
-		}
-		show();
-		if (check_serial())
-			break;
-		delay(pause);
-	}
+// === Setup ===
+void setup() {
+    animator.begin<WS2811, DATA_PIN, RGB>();
+    Serial.begin(115200);
+
+    EEPROM.get(0, pattern);
+    if (pattern < 0 || pattern >= NUM_PATTERNS) pattern = 0;
+    debug("EEPROM Pattern:");
+    debug(pattern);
+
+    pinMode(BUTTON_PIN, INPUT_PULLUP);
 }
 
-void chaseThree(long length, long time, long pause, CRGB one, CRGB two, CRGB three)
-{
-	long i;
-	for (long k = 0; k < time; k += pause)
-	{
-		i = i + 1;
-		for (long j = 0; j < NUM_LEDS; j++)
-		{
-			long mod = ((j + i) / (3 * length)) % 3;
-			if (mod == 0)
-			{
-				leds[j] = one;
-			}
-			else if (mod == 1)
-			{
-				leds[j] = two;
-			}
-			else
-			{
-				leds[j] = three;
-			}
-		}
-		show();
-		if (check_serial())
-			break;
-		delay(pause);
-	}
+// === Main Loop ===
+void loop() {
+    if (lastPattern != pattern) {
+        animator.clear();
+        Serial.print("Pattern ");
+        Serial.print(pattern);
+        Serial.print(": ");
+        Serial.println(patterns[pattern].name);
+        EEPROM.put(0, pattern);
+        lastPattern = pattern;
+    }
+
+    patterns[pattern].run();
 }
 
-void clear()
-{
-	for (int i = 0; i < 148; i++)
-	{
-		leds[i] = BLACK;
-	}
-	show();
-}
-void show()
-{
-	FastLED.show();
-}
-void halloweenShow()
-{
-	clear();
-
-	if (check_serial())
-		return;
-	pulse(CRGB(0, 200, 0), SPEED * 4l, 20);
-	if (check_serial())
-		return;
-	flash(15, CRGB(0, 200, 0));
-	if (check_serial())
-		return;
-	pulse(PURPLE, SPEED * 4l, 20);
-	if (check_serial())
-		return;
-	flash(15, PURPLE);
-	if (check_serial())
-		return;
-	pulse(ORANGE, SPEED * 4l, 20);
-	if (check_serial())
-		return;
-	flash(15, ORANGE);
-	if (check_serial())
-		return;
-	chase(14, SPEED * 4l, 50, CRGB(0, 255, 0), BLACK);
-	if (check_serial())
-		return;
-	flash(15, CRGB(0, 200, 0));
-	if (check_serial())
-		return;
-	halloween(SPEED * 4l, 1000);
-	if (check_serial())
-		return;
-	flash(15, PURPLE);
-	if (check_serial())
-		return;
-	chase(10, SPEED * 4l, 50, ORANGE, PURPLE);
-	if (check_serial())
-		return;
-	flashHalf(15, WHITE);
+// === Debug Functions ===
+void debug(const String &s) {
+#ifdef DEBUG
+    Serial.println(s);
+#endif
 }
 
-void thanksgivingShow()
-{
-	if (check_serial())
-		return;
-	everyThird(CRGB(255, 0, 0), CRGB(200, 100, 0), ORANGE);
-	if (check_serial())
-		return;
-	show();
-	delay(2000l);
-	everyThird(CRGB(200, 100, 0), ORANGE, CRGB(255, 0, 0));
-	if (check_serial())
-		return;
-	show();
-	delay(2000l);
-}
-
-void valentines()
-{
-	if (check_serial())
-		return;
-	chase(14, SPEED * 4l, 50, CRGB(255, 0, 0), CRGB(255, 30, 30));
-	showFixed(CRGB(255, 0, 0));
-	for (int i = 0; i < 20; i++)
-	{
-		if (check_serial())
-			return;
-		delay(SPEED / 20);
-	}
-	showFixed(CRGB(255, 30, 30));
-	for (int i = 0; i < 20; i++)
-	{
-		if (check_serial())
-			return;
-		delay(SPEED / 20);
-	}
-}
-
-void fourth()
-{
-	chaseThree(5, SPEED * 4l, 100, CRGB(255, 0, 0), CRGB(200, 200, 200), CRGB(0, 0, 200));
-	if (check_serial())
-		return;
-	everyThird(CRGB(255, 0, 0), CRGB(200, 200, 200), CRGB(0, 0, 200));
-	if (check_serial())
-		return;
-	show();
-	delay(SPEED);
-	for (int i = 0; i < 20; i++)
-	{
-		showFixed(CRGB(255, 0, 0));
-		if (check_serial())
-			break;
-		delay(2000);
-		if (check_serial())
-			break;
-		showFixed(CRGB(200, 200, 200));
-		delay(2000);
-		if (check_serial())
-			break;
-		showFixed(CRGB(0, 0, 200));
-		delay(2000);
-		if (check_serial())
-			break;
-	}
-}
-
-void xmas()
-{
-	chase(10, SPEED * 4l, 100, CRGB(255, 0, 0), CRGB(0, 255, 0));
-	if (check_serial())
-		return;
-	chase(10, SPEED * 4l, 100, CRGB(255, 0, 0), CRGB(200, 200, 200));
-	if (check_serial())
-		return;
-	switchColor(SPEED * 4l, 1000, CRGB(0, 0, 255), CRGB(200, 200, 200));
-	if (check_serial())
-		return;
-	CRGB randomColors[] = {CRGB(255, 0, 0), CRGB(200, 150, 0), CRGB(0, 255, 0), CRGB(255, 0, 255), CRGB(0, 255, 255)};
-	randomColor(randomColors, 5);
-	if (check_serial())
-		return;
-}
-
-void bears()
-{
-	chase(10, SPEED * 4l, 100, CRGB(0, 0, 200), ORANGE);
-}
-void st_pats()
-{
-	if (check_serial())
-		return;
-	showFixed(CRGB(0, 240, 0));
-	if (check_serial())
-		return;
-	for (int i = 0; i < 20; i++)
-	{
-		if (check_serial())
-			return;
-		delay(SPEED / 20);
-	}
-	if (check_serial())
-		return;
-	chase(10, SPEED * 4l, 100, CRGB(0, 255, 0), CRGB(200, 200, 200));
-}
-
-void easter()
-{
-	everyFourth(PINK, LIGHT_BLUE, CRGB(230, 150, 0), CRGB(50, 255, 50));
-	if (check_serial())
-		return;
-	show();
-	delay(2000l);
-	everyFourth(LIGHT_BLUE, CRGB(230, 150, 0), CRGB(50, 255, 50), PINK);
-	if (check_serial())
-		return;
-	show();
-	delay(2000l);
-}
-void show_color(CRGB color)
-{
-	showFixed(color);
-	if (check_serial())
-		return;
-	for (int i = 0; i < 20; i++)
-	{
-		if (check_serial())
-			return;
-		delay(SPEED / 20);
-	}
-}
-
-// This function runs over and over, and is where you do the magic to light
-// your leds.
-void loop()
-{
-	Serial.println("Pattern:");
-	Serial.println(pattern);
-	Serial.println("High Speed:");
-	Serial.println(highSpeed);
-	if (highSpeed)
-	{
-		SPEED = 2000l;
-	}
-	else
-	{
-		SPEED = 40000l;
-	}
-	if (lastPattern != pattern)
-	{
-		clear();
-	}
-	switch (pattern)
-	{
-	case 0:
-		Serial.println("XMas");
-		xmas();
-		break;
-	case 1:
-		Serial.println("Fourth");
-		fourth();
-		break;
-	case 2:
-		Serial.println("Halloween");
-		halloweenShow();
-		break;
-	case 3:
-		Serial.println("Thanksgiving");
-		thanksgivingShow();
-		break;
-	case 4:
-		Serial.println("St Pats");
-		st_pats();
-		break;
-	case 5:
-		Serial.println("Valentines");
-		valentines();
-		break;
-	case 6:
-		Serial.println("Pink");
-		show_color(PINK);
-		break;
-	case 7:
-		Serial.println("Red");
-		show_color(CRGB(255, 0, 0));
-		break;
-	case 8:
-		Serial.println("White");
-		show_color(CRGB(255, 255, 255));
-		break;
-	case 9:
-		Serial.println("Blue");
-		show_color(CRGB(0, 0, 255));
-		break;
-	case 10:
-		Serial.println("Green");
-		show_color(CRGB(0, 255, 0));
-		break;
-	case 11:
-		Serial.println("Yellow");
-		show_color(CRGB(255, 180, 0));
-		break;
-	case 12:
-		Serial.println("Orange");
-		show_color(ORANGE);
-		break;
-	case 13:
-		Serial.println("Light Blue");
-		show_color(LIGHT_BLUE);
-		break;
-	case 14:
-		Serial.println("Purple");
-		show_color(CRGB(100, 0, 255));
-		break;
-	case 15:
-		Serial.println("Magenta");
-		show_color(CRGB(255, 0, 255));
-		break;
-	case 16:
-		Serial.println("Cyan");
-		show_color(CRGB(0, 255, 255));
-		break;
-	case 17:
-		Serial.println("Bears");
-		bears();
-		break;
-	case 18:
-		Serial.println("Easter");
-		easter();
-		break;
-	case 19:
-		Serial.println("Moving Rainbow");
-		for (int hue = 0; hue < 255; hue++)
-		{
-			fill_rainbow(leds, NUM_LEDS, hue, 7);
-			show();
-			delay(10l);
-			if (check_serial())
-				return;
-		}
-		break;
-	case 20:
-		Serial.println("Solid Rainbow");
-		fill_rainbow(leds, NUM_LEDS, 0, 7);
-		show();
-		delay(1000l);
-		if (check_serial())
-			return;
-		break;
-	case 21:
-		Serial.println("Random Cycle");
-		randomColor(randomColors2, 5);
-		if (check_serial())
-			return;
-		show();
-		delay(2000l);
-		break;
-	case 22:
-		Serial.println("Resetting Random Color");
-		r = random(0, 255);
-		g = random(0, 255);
-		b = random(0, 255);
-		pattern = 23;
-		break;
-	case 23:
-		Serial.println("Random Color");
-		showFixed(CRGB(r, g, b));
-		if (check_serial())
-			return;
-		delay(1000l);
-		break;
-	case 24:
-		Serial.println("Crazy");
-		flash(15, CRGB(255, 255, 255));
-		if (check_serial())
-			return;
-		break;
-
-	case 25:
-    Serial.println("Yellow White");
-    show_color(CRGB(140, 60, 20));
-    break;
-	default:
-		pattern = 0;
-	}
-	if (lastPattern != pattern)
-	{
-		Serial.println("Saving pattern");
-		EEPROM.put(0, pattern);
-	}
-	if (lastHighSpeed != highSpeed)
-	{
-		Serial.println("Saving highspeed");
-		EEPROM.put(sizeof(int), highSpeed);
-	}
-	lastPattern = pattern;
-	lastHighSpeed = highSpeed;
+void debug(int i) {
+#ifdef DEBUG
+    Serial.println(i);
+#endif
 }

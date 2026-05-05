@@ -1,5 +1,6 @@
 {
     "board": "arduino:avr:uno",
-    "port": "COM21",
-    "sketch": "\\projects\\stringv3\\stringv3.ino"
+    "port": "/dev/cu.usbmodem101",
+    "sketch": "projects/serialnew/serialnew.ino",
+    "programmer": "arduino:avrisp"
 }
